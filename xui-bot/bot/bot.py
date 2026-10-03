@@ -53,6 +53,7 @@ PHONE_KB = ReplyKeyboardMarkup(
 )
 
 _INVISIBLE = re.compile(r"[​-‏‪-‮⁦-⁩﻿]")
+_DIGITS = str.maketrans("۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩", "01234567890123456789")
 _UNSAFE_EMAIL = re.compile(r"[\s\\/#?%&\"'<>`|,;:@{}\[\]]+")
 
 
@@ -99,6 +100,21 @@ def clean_name(text: str) -> str | None:
     if not (2 <= len(name) <= 40) or letters < 2 or name.startswith("/"):
         return None
     return name
+
+
+def normalize_phone(text: str) -> str | None:
+    """'+98 912…', '0912…', '912…', '0098912…' (Persian digits too) -> '+98912…'. None if it is not a number."""
+    raw = text.translate(_DIGITS).strip()
+    digits = re.sub(r"\D", "", raw)
+    if raw.startswith("00"):
+        digits = digits[2:]
+    elif raw.startswith("0") and len(digits) == 11:  # Iranian local format
+        digits = "98" + digits[1:]
+    elif len(digits) == 10 and digits.startswith("9"):
+        digits = "98" + digits
+    if not 10 <= len(digits) <= 15 or re.sub(r"[\d\s+()\-]", "", raw):
+        return None
+    return "+" + digits
 
 
 def email_base(name: str) -> str:
@@ -158,7 +174,7 @@ async def build_links(ctx, row) -> tuple[str | None, str | None]:
     return sub, vless
 
 
-async def send_links(ctx, row, header: str) -> None:
+async def send_links(ctx, row, header: str, chat_id: int | None = None) -> None:
     sub, vless = await build_links(ctx, row)
     text = header
     if sub:
@@ -166,8 +182,9 @@ async def send_links(ctx, row, header: str) -> None:
     if vless:
         text += T.LINK_VLESS.format(vless=esc(vless))
     text += T.LINKS_FOOTER
-    chat_id = row["tg_id"]
-    await ctx.bot.send_message(chat_id, text, reply_markup=USER_KB)
+    to_user = chat_id is None
+    chat_id = row["tg_id"] if to_user else chat_id
+    await ctx.bot.send_message(chat_id, text, reply_markup=USER_KB if to_user else None)
     if sub:
         await ctx.bot.send_photo(chat_id, qr_png(sub), caption=T.QR_SUB)
     if vless:
@@ -176,8 +193,8 @@ async def send_links(ctx, row, header: str) -> None:
 
 def request_card(row) -> tuple[str, InlineKeyboardMarkup]:
     text = T.NEW_REQUEST.format(
-        name=esc(row["name"]), phone=esc(row["phone"]), tg_id=row["tg_id"],
-        username=username_of(row), time=tehran_time(row["created_at"]),
+        name=esc(row["name"]), phone=esc(row["phone"]), tg_id=row["tg_id"] if row["tg_id"] > 0 else "—",
+        username=username_of(row) if row["tg_id"] > 0 else T.WEB_SOURCE, time=tehran_time(row["created_at"]),
     )
     kb = InlineKeyboardMarkup([[
         InlineKeyboardButton(T.BTN_APPROVE, callback_data=f"ap:{row['tg_id']}"),
@@ -204,6 +221,8 @@ async def extra_card(ctx, row) -> tuple[str, InlineKeyboardMarkup]:
 
 
 async def notify(ctx, chat_id: int, text: str, **kwargs) -> bool:
+    if chat_id <= 0:  # web user without Telegram; they read their status on the web page
+        return False
     try:
         await ctx.bot.send_message(chat_id, text, **kwargs)
         return True
@@ -245,13 +264,34 @@ async def on_contact(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     if contact.user_id != user.id:
         await update.message.reply_text(T.NOT_OWN_CONTACT, reply_markup=PHONE_KB)
         return
-    phone = contact.phone_number if contact.phone_number.startswith("+") else "+" + contact.phone_number
+    phone = normalize_phone(contact.phone_number) or "+" + contact.phone_number.lstrip("+")
+    web_row = db(ctx).web_by_phone(phone)
+    if web_row:
+        await link_web_user(update, ctx, web_row)
+        return
     db(ctx).update(user.id, phone=phone, username=user.username, status="pending", created_at=int(time.time()))
     await update.message.reply_text(T.REQUEST_SUBMITTED, reply_markup=ReplyKeyboardRemove())
 
     text, kb = request_card(db(ctx).get(user.id))
     for admin_id in cfg(ctx).admin_ids:
         await notify(ctx, admin_id, text, reply_markup=kb)
+
+
+async def link_web_user(update: Update, ctx, web_row) -> None:
+    user = update.effective_user
+    db(ctx).link(web_row["tg_id"], user.id, user.username)
+    row = db(ctx).get(user.id)
+    if row["status"] == "pending":
+        await update.message.reply_text(T.LINKED_PENDING, reply_markup=ReplyKeyboardRemove())
+    elif row["status"] == "disabled":
+        await update.message.reply_text(T.ACCOUNT_DISABLED, reply_markup=ReplyKeyboardRemove())
+    else:
+        try:
+            await send_links(ctx, row, T.LINKED_HEADER.format(name=esc(row["name"])))
+        except PanelError:
+            await update.message.reply_text(T.USER_MENU, reply_markup=USER_KB)
+    for admin_id in cfg(ctx).admin_ids:
+        await notify(ctx, admin_id, T.ADMIN_LINKED.format(name=esc(row["name"]), phone=esc(row["phone"])))
 
 
 async def on_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
@@ -318,15 +358,22 @@ async def request_more(update: Update, ctx) -> None:
     if not row or row["status"] != "approved":
         await q.answer()
         return
-    if row["extra_requested_at"]:
+    if not await submit_more(ctx, row):
         await q.answer(T.MORE_ALREADY, show_alert=True)
         return
-    db(ctx).update(tg_id, extra_requested_at=int(time.time()))
     await q.answer()
     await ctx.bot.send_message(tg_id, T.MORE_SUBMITTED, reply_markup=USER_KB)
-    text, kb = await extra_card(ctx, db(ctx).get(tg_id))
+
+
+async def submit_more(ctx, row) -> bool:
+    """Record a "more traffic" request and tell the admins. False if one is already waiting."""
+    if row["extra_requested_at"]:
+        return False
+    db(ctx).update(row["tg_id"], extra_requested_at=int(time.time()))
+    text, kb = await extra_card(ctx, db(ctx).get(row["tg_id"]))
     for admin_id in cfg(ctx).admin_ids:
         await notify(ctx, admin_id, text, reply_markup=kb)
+    return True
 
 
 # ---------------------------------------------------------------- admin
@@ -402,7 +449,8 @@ async def user_card(ctx, row) -> tuple[str, InlineKeyboardMarkup]:
         usage = T.CARD_USAGE_ERR.format(error=esc(exc))
     active = row["status"] == "approved"
     text = T.USER_CARD.format(
-        name=esc(row["name"]), phone=esc(row["phone"]), tg_id=row["tg_id"], username=username_of(row),
+        name=esc(row["name"]), phone=esc(row["phone"]),
+        tg_id=row["tg_id"] if row["tg_id"] > 0 else "—", username=username_of(row) if row["tg_id"] > 0 else T.WEB_ONLY,
         email=esc(row["email"]), status=T.STATUS_ON if active else "⛔️ غیرفعال", usage=usage,
     )
     uid = row["tg_id"]
@@ -445,7 +493,7 @@ async def approve(update: Update, ctx, tg_id: int) -> None:
         if await panel(ctx).get_client(row["email"]) is None:
             await panel(ctx).add_client(
                 email=row["email"], uuid=row["uuid"], sub_id=row["sub_id"],
-                total_bytes=c.traffic_gb * GB, tg_id=tg_id,
+                total_bytes=c.traffic_gb * GB, tg_id=max(tg_id, 0),
                 comment=f"{row['name']} | {row['phone']}", inbound_id=ib,
             )
     except PanelError as exc:
@@ -455,6 +503,8 @@ async def approve(update: Update, ctx, tg_id: int) -> None:
 
     db(ctx).update(tg_id, status="approved", approved_at=int(time.time()))
     await q.edit_message_text(q.message.text_html + T.REQ_APPROVED.format(email=esc(row["email"])))
+    if tg_id < 0:  # web user: the links show up on their status page
+        return
     header = T.APPROVED_HEADER.format(name=esc(row["name"]), gb=T.fa(c.traffic_gb))
     try:
         await send_links(ctx, row, header)
@@ -569,7 +619,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         if action == "u":
             await q.answer()
         elif action == "rs":
-            await send_links(ctx, row, T.LINKS_HEADER)
+            # A web-only user has no chat with the bot, so the admin gets the links to pass on.
+            await send_links(ctx, row, T.LINKS_HEADER, chat_id=q.message.chat_id if tg_id < 0 else None)
             await q.answer(T.DONE)
         elif action == "rt":
             await p.reset_traffic(row["email"])
@@ -622,6 +673,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 async def check_traffic(ctx) -> None:
     threshold = cfg(ctx).low_traffic_gb * GB
     for row in db(ctx).by_status("approved"):
+        if row["tg_id"] < 0:  # web-only: the status page shows the warning instead
+            continue
         try:
             used, total = used_total(await panel(ctx).client_traffic(row["email"]))
         except PanelError as exc:
@@ -667,12 +720,18 @@ async def post_init(app: Application) -> None:
     for admin_id in c.admin_ids:
         await notify(_Ctx, admin_id, T.STARTED + status, reply_markup=ADMIN_KB)
     app.bot_data["traffic_task"] = asyncio.create_task(traffic_loop(_Ctx))
+    if c.web_port:
+        from .web import start_web
+
+        app.bot_data["web_runner"] = await start_web(_Ctx, c.web_host, c.web_port)
 
 
 async def post_shutdown(app: Application) -> None:
     task = app.bot_data.get("traffic_task")
     if task:
         task.cancel()
+    if "web_runner" in app.bot_data:
+        await app.bot_data["web_runner"].cleanup()
     if "panel" in app.bot_data:
         await app.bot_data["panel"].close()
 

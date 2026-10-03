@@ -175,3 +175,10 @@ NEW_MORE_REQUEST = (
 BTN_APPROVE_MORE = "✅ تایید (+{gb} گیگ)"
 MORE_REQ_APPROVED = "\n\n✅ <b>تایید شد</b> — {gb} گیگابایت اضافه شد."
 ADD_TRAFFIC_FAILED = "⚠️ افزودن حجم به «{email}» انجام نشد:\n<code>{error}</code>"
+
+# ---------- web requests ----------
+WEB_SOURCE = "🌐 ثبت شده از طریق وب‌سایت"
+WEB_ONLY = "🌐 فقط وب (تلگرام وصل نشده)"
+LINKED_HEADER = "🎉 <b>اکانت شما پیدا شد و به تلگرام وصل شد!</b>\n\n👤 نام: {name}\n\n"
+LINKED_PENDING = "🔗 درخواست شما از وب‌سایت پیدا شد و به تلگرام وصل شد.\n" + REQUEST_PENDING
+ADMIN_LINKED = "🔗 «{name}» (<code>{phone}</code>) که از وب‌سایت ثبت‌نام کرده بود، به تلگرام وصل شد."

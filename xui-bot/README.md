@@ -14,6 +14,18 @@ no device limit) and sends the coworker a subscription link and a VLESS link, wi
 5. When their remaining traffic drops to `LOW_TRAFFIC_GB` (default 2 GB) the bot warns them once,
    with a "➕ درخواست حجم بیشتر" button. The same button is under the 📊 remaining traffic message.
 
+**People without Telegram (web form)**
+1. Open `http://SERVER:WEB_PORT/` and send their name and phone number.
+2. They land on a private status page (`/s/<secret>`). They should bookmark it, because it is their only way back in.
+3. The admin gets the usual ✅ تایید / ❌ رد card in Telegram, marked 🌐.
+4. After approval the status page shows their usage, subscription and VLESS links with QR codes, a low-traffic
+   warning and the ➕ درخواست حجم بیشتر button.
+5. If they later start the bot and share the **same phone number**, the account moves to their Telegram
+   (links, alerts, menu). The status page keeps working.
+
+The form allows 5 submissions per hour per IP, has a hidden anti-bot field, and stops accepting
+requests while 50 web requests are waiting.
+
 **Admin**
 - Each new request arrives with ✅ تایید / ❌ رد buttons.
 - Each "more traffic" request arrives with ✅ تایید (+5 گیگ) / ❌ رد buttons. Approving adds
@@ -55,5 +67,6 @@ systemctl restart altyn-bot         # after editing /opt/altyn-bot/.env
 Useful `.env` settings:
 - `SUB_URL`: set it if the subscription link in the status message is wrong (e.g. `https://sub.example.com:2096/sub/`).
 - `TRAFFIC_GB`: the quota for new users.
+- `WEB_PORT`: the port of the web form (empty turns it off). Open it in the firewall: `ufw allow 8080/tcp`.
 - `LOW_TRAFFIC_GB`, `TRAFFIC_CHECK_MINUTES`, `EXTRA_TRAFFIC_GB`: the low-traffic alert and how much an approved request adds.
 - `INBOUND_ID`: skips looking up the inbound by its `INBOUND_REMARK`.

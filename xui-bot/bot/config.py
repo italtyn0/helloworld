@@ -35,6 +35,8 @@ class Config:
     low_traffic_gb: float
     extra_traffic_gb: int
     traffic_check_minutes: int
+    web_port: int | None
+    web_host: str
     cdn_domain: str
     vless_template: str
     sub_url: str
@@ -47,6 +49,7 @@ class Config:
         if missing:
             raise SystemExit(f"Missing required settings in .env: {', '.join(missing)}")
         inbound_id = os.environ.get("INBOUND_ID", "").strip()
+        web_port = os.environ.get("WEB_PORT", "").strip()
         return cls(
             bot_token=os.environ["BOT_TOKEN"].strip(),
             admin_ids=frozenset(int(x) for x in os.environ["ADMIN_IDS"].split(",") if x.strip()),
@@ -59,6 +62,8 @@ class Config:
             low_traffic_gb=float(os.environ.get("LOW_TRAFFIC_GB", "2")),
             extra_traffic_gb=int(os.environ.get("EXTRA_TRAFFIC_GB", "5")),
             traffic_check_minutes=max(1, int(os.environ.get("TRAFFIC_CHECK_MINUTES", "30"))),
+            web_port=int(web_port) if web_port else None,
+            web_host=os.environ.get("WEB_HOST", "0.0.0.0").strip(),
             cdn_domain=os.environ.get("CDN_DOMAIN", "").strip(),
             vless_template=os.environ.get("VLESS_TEMPLATE", "").strip(),
             sub_url=os.environ.get("SUB_URL", "").strip(),
