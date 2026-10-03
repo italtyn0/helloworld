@@ -4,6 +4,8 @@ from pathlib import Path
 
 # user status flow: awaiting_name -> awaiting_phone -> pending -> approved | rejected
 #                   approved <-> disabled
+# low_alerted: 1 once the low-traffic warning was sent; cleared when the quota is back above the threshold.
+# extra_requested_at: set while a "more traffic" request waits for the admin.
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS users (
     tg_id       INTEGER PRIMARY KEY,
@@ -19,6 +21,12 @@ CREATE TABLE IF NOT EXISTS users (
 );
 """
 
+# Columns added after the first release; added to existing databases on startup.
+MIGRATIONS = {
+    "low_alerted": "INTEGER NOT NULL DEFAULT 0",
+    "extra_requested_at": "INTEGER",
+}
+
 
 class DB:
     def __init__(self, path: Path):
@@ -26,6 +34,10 @@ class DB:
         self.conn = sqlite3.connect(path)
         self.conn.row_factory = sqlite3.Row
         self.conn.executescript(SCHEMA)
+        have = {r["name"] for r in self.conn.execute("PRAGMA table_info(users)")}
+        for col, decl in MIGRATIONS.items():
+            if col not in have:
+                self.conn.execute(f"ALTER TABLE users ADD COLUMN {col} {decl}")
         self.conn.commit()
 
     def get(self, tg_id: int):
@@ -36,7 +48,8 @@ class DB:
             """INSERT INTO users (tg_id, username, status, created_at) VALUES (?, ?, 'awaiting_name', ?)
                ON CONFLICT(tg_id) DO UPDATE SET username = excluded.username, status = 'awaiting_name',
                    name = NULL, phone = NULL, email = NULL, uuid = NULL, sub_id = NULL,
-                   created_at = excluded.created_at, approved_at = NULL""",
+                   created_at = excluded.created_at, approved_at = NULL,
+                   low_alerted = 0, extra_requested_at = NULL""",
             (tg_id, username, int(time.time())),
         )
         self.conn.commit()
@@ -54,6 +67,11 @@ class DB:
         marks = ",".join("?" * len(statuses))
         return self.conn.execute(
             f"SELECT * FROM users WHERE status IN ({marks}) ORDER BY created_at", statuses
+        ).fetchall()
+
+    def extra_requests(self) -> list:
+        return self.conn.execute(
+            "SELECT * FROM users WHERE extra_requested_at IS NOT NULL ORDER BY extra_requested_at"
         ).fetchall()
 
     def email_taken(self, email: str, except_tg_id: int) -> bool:

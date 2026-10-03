@@ -103,6 +103,15 @@ class Panel:
     async def bulk_reset_traffic(self, emails: list) -> dict:
         return await self._request("POST", "/panel/api/clients/bulkResetTraffic", json={"emails": emails}) or {}
 
+    async def add_traffic(self, email: str, add_bytes: int) -> None:
+        """Raise the client's quota by add_bytes. A client disabled for running out is re-enabled by the panel."""
+        result = await self._request(
+            "POST", "/panel/api/clients/bulkAdjust", json={"emails": [email], "addBytes": add_bytes}
+        ) or {}
+        if not result.get("adjusted"):
+            reasons = "; ".join(s.get("reason", "") for s in result.get("skipped") or []) or "not adjusted"
+            raise PanelAPIError(reasons)
+
     async def set_enabled(self, email: str, enabled: bool) -> None:
         path = "/panel/api/clients/bulkEnable" if enabled else "/panel/api/clients/bulkDisable"
         await self._request("POST", path, json={"emails": [email]})

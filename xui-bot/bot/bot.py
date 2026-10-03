@@ -1,3 +1,4 @@
+import asyncio
 import html
 import io
 import logging
@@ -46,6 +47,7 @@ except Exception:  # tzdata missing
 
 USER_KB = ReplyKeyboardMarkup([[T.BTN_USAGE, T.BTN_LINKS], [T.BTN_GUIDE]], resize_keyboard=True)
 ADMIN_KB = ReplyKeyboardMarkup([[T.BTN_PENDING, T.BTN_USERS], [T.BTN_RENEW_ALL, T.BTN_STATUS]], resize_keyboard=True)
+MORE_KB = InlineKeyboardMarkup([[InlineKeyboardButton(T.BTN_MORE_TRAFFIC, callback_data="more")]])
 PHONE_KB = ReplyKeyboardMarkup(
     [[KeyboardButton(T.BTN_SHARE_PHONE, request_contact=True)]], resize_keyboard=True, one_time_keyboard=True
 )
@@ -77,6 +79,14 @@ def esc(value) -> str:
 
 def gb(n_bytes: int) -> str:
     return T.fa(f"{n_bytes / GB:.2f}")
+
+
+def used_total(t: dict) -> tuple[int, int]:
+    return int(t.get("up", 0)) + int(t.get("down", 0)), int(t.get("total", 0))
+
+
+def tehran_time(ts: int) -> str:
+    return T.fa(datetime.fromtimestamp(ts, TZ).strftime("%Y-%m-%d %H:%M"))
 
 
 def username_of(row) -> str:
@@ -165,14 +175,30 @@ async def send_links(ctx, row, header: str) -> None:
 
 
 def request_card(row) -> tuple[str, InlineKeyboardMarkup]:
-    created = datetime.fromtimestamp(row["created_at"], TZ).strftime("%Y-%m-%d %H:%M")
     text = T.NEW_REQUEST.format(
         name=esc(row["name"]), phone=esc(row["phone"]), tg_id=row["tg_id"],
-        username=username_of(row), time=T.fa(created),
+        username=username_of(row), time=tehran_time(row["created_at"]),
     )
     kb = InlineKeyboardMarkup([[
         InlineKeyboardButton(T.BTN_APPROVE, callback_data=f"ap:{row['tg_id']}"),
         InlineKeyboardButton(T.BTN_REJECT, callback_data=f"rj:{row['tg_id']}"),
+    ]])
+    return text, kb
+
+
+async def extra_card(ctx, row) -> tuple[str, InlineKeyboardMarkup]:
+    try:
+        used, total = used_total(await panel(ctx).client_traffic(row["email"]))
+        usage = T.CARD_USAGE.format(used=gb(used), total=gb(total), panel_status=f"{gb(max(total - used, 0))} باقی‌مانده")
+    except PanelError as exc:
+        usage = T.CARD_USAGE_ERR.format(error=esc(exc))
+    text = T.NEW_MORE_REQUEST.format(
+        name=esc(row["name"]), phone=esc(row["phone"]), tg_id=row["tg_id"], email=esc(row["email"]),
+        usage=usage, time=tehran_time(row["extra_requested_at"]),
+    )
+    kb = InlineKeyboardMarkup([[
+        InlineKeyboardButton(T.BTN_APPROVE_MORE.format(gb=T.fa(cfg(ctx).extra_traffic_gb)), callback_data=f"xa:{row['tg_id']}"),
+        InlineKeyboardButton(T.BTN_REJECT, callback_data=f"xr:{row['tg_id']}"),
     ]])
     return text, kb
 
@@ -274,26 +300,47 @@ async def show_usage(update: Update, ctx, row) -> None:
         log.warning("traffic lookup failed for %s: %s", row["email"], exc)
         await update.message.reply_text(T.TRY_LATER)
         return
-    used = int(t.get("up", 0)) + int(t.get("down", 0))
-    total = int(t.get("total", 0))
+    used, total = used_total(t)
     await update.message.reply_text(
         T.USAGE.format(
             name=esc(row["name"]),
             status=T.STATUS_ON if t.get("enable", True) else T.STATUS_OFF,
             used=gb(used), total=gb(total), remaining=gb(max(total - used, 0)),
         ),
-        reply_markup=USER_KB,
+        reply_markup=MORE_KB,
     )
+
+
+async def request_more(update: Update, ctx) -> None:
+    q = update.callback_query
+    tg_id = q.from_user.id
+    row = db(ctx).get(tg_id)
+    if not row or row["status"] != "approved":
+        await q.answer()
+        return
+    if row["extra_requested_at"]:
+        await q.answer(T.MORE_ALREADY, show_alert=True)
+        return
+    db(ctx).update(tg_id, extra_requested_at=int(time.time()))
+    await q.answer()
+    await ctx.bot.send_message(tg_id, T.MORE_SUBMITTED, reply_markup=USER_KB)
+    text, kb = await extra_card(ctx, db(ctx).get(tg_id))
+    for admin_id in cfg(ctx).admin_ids:
+        await notify(ctx, admin_id, text, reply_markup=kb)
 
 
 # ---------------------------------------------------------------- admin
 async def admin_text(update: Update, ctx, text: str) -> None:
     if text == T.BTN_PENDING:
         rows = db(ctx).by_status("pending")
-        if not rows:
+        extra = db(ctx).extra_requests()
+        if not rows and not extra:
             await update.message.reply_text(T.NO_PENDING, reply_markup=ADMIN_KB)
         for row in rows:
             card, kb = request_card(row)
+            await update.message.reply_text(card, reply_markup=kb)
+        for row in extra:
+            card, kb = await extra_card(ctx, row)
             await update.message.reply_text(card, reply_markup=kb)
     elif text == T.BTN_USERS:
         await list_users(update, ctx)
@@ -427,6 +474,41 @@ async def reject(update: Update, ctx, tg_id: int) -> None:
     await notify(ctx, tg_id, T.REQUEST_REJECTED, reply_markup=ReplyKeyboardRemove())
 
 
+async def approve_more(update: Update, ctx, tg_id: int) -> None:
+    q = update.callback_query
+    row = db(ctx).get(tg_id)
+    if not row or not row["extra_requested_at"]:
+        await q.answer(T.REQ_ALREADY, show_alert=True)
+        return
+    if row["status"] != "approved":  # disabled since the request was made
+        db(ctx).update(tg_id, extra_requested_at=None)
+        await q.answer(T.REQ_ALREADY, show_alert=True)
+        return
+    await q.answer("⏳")
+    extra = cfg(ctx).extra_traffic_gb
+    try:
+        await panel(ctx).add_traffic(row["email"], extra * GB)
+    except PanelError as exc:
+        log.warning("add traffic failed for %s: %s", row["email"], exc)
+        await ctx.bot.send_message(q.message.chat_id, T.ADD_TRAFFIC_FAILED.format(email=esc(row["email"]), error=esc(exc)))
+        return
+    db(ctx).update(tg_id, extra_requested_at=None, low_alerted=0)
+    await q.edit_message_text(q.message.text_html + T.MORE_REQ_APPROVED.format(gb=T.fa(extra)))
+    await notify(ctx, tg_id, T.MORE_APPROVED.format(gb=T.fa(extra)), reply_markup=USER_KB)
+
+
+async def reject_more(update: Update, ctx, tg_id: int) -> None:
+    q = update.callback_query
+    row = db(ctx).get(tg_id)
+    if not row or not row["extra_requested_at"]:
+        await q.answer(T.REQ_ALREADY, show_alert=True)
+        return
+    db(ctx).update(tg_id, extra_requested_at=None)
+    await q.answer()
+    await q.edit_message_text(q.message.text_html + T.REQ_REJECTED)
+    await notify(ctx, tg_id, T.MORE_REJECTED, reply_markup=USER_KB)
+
+
 async def renew_all(update: Update, ctx) -> None:
     q = update.callback_query
     await q.answer("⏳")
@@ -449,6 +531,9 @@ async def renew_all(update: Update, ctx) -> None:
 
 async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     q = update.callback_query
+    if q.data == "more":
+        await request_more(update, ctx)
+        return
     if not is_admin(ctx, q.from_user.id):
         await q.answer()
         return
@@ -467,6 +552,12 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         return
     if action == "rj":
         await reject(update, ctx, tg_id)
+        return
+    if action == "xa":
+        await approve_more(update, ctx, tg_id)
+        return
+    if action == "xr":
+        await reject_more(update, ctx, tg_id)
         return
 
     row = db(ctx).get(tg_id)
@@ -527,6 +618,37 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         await ctx.bot.send_message(q.message.chat_id, text, reply_markup=kb)
 
 
+# ---------------------------------------------------------------- low-traffic alerts
+async def check_traffic(ctx) -> None:
+    threshold = cfg(ctx).low_traffic_gb * GB
+    for row in db(ctx).by_status("approved"):
+        try:
+            used, total = used_total(await panel(ctx).client_traffic(row["email"]))
+        except PanelError as exc:
+            log.warning("traffic check failed for %s: %s", row["email"], exc)
+            continue
+        if total <= 0:  # unlimited
+            continue
+        remaining = max(total - used, 0)
+        if remaining > threshold:
+            if row["low_alerted"]:
+                db(ctx).update(row["tg_id"], low_alerted=0)
+        elif not row["low_alerted"]:
+            text = T.LOW_TRAFFIC.format(used=gb(used), total=gb(total), remaining=gb(remaining))
+            # Marked even if delivery fails (e.g. bot blocked) so it is not retried every round.
+            db(ctx).update(row["tg_id"], low_alerted=1)
+            await notify(ctx, row["tg_id"], text, reply_markup=MORE_KB)
+
+
+async def traffic_loop(ctx) -> None:
+    while True:
+        try:
+            await check_traffic(ctx)
+        except Exception:
+            log.exception("traffic check round failed")
+        await asyncio.sleep(cfg(ctx).traffic_check_minutes * 60)
+
+
 # ---------------------------------------------------------------- lifecycle
 async def on_error(update: object, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     log.error("unhandled error", exc_info=ctx.error)
@@ -544,9 +666,13 @@ async def post_init(app: Application) -> None:
     log.info("startup status:\n%s", status)
     for admin_id in c.admin_ids:
         await notify(_Ctx, admin_id, T.STARTED + status, reply_markup=ADMIN_KB)
+    app.bot_data["traffic_task"] = asyncio.create_task(traffic_loop(_Ctx))
 
 
 async def post_shutdown(app: Application) -> None:
+    task = app.bot_data.get("traffic_task")
+    if task:
+        task.cancel()
     if "panel" in app.bot_data:
         await app.bot_data["panel"].close()
 

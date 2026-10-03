@@ -32,6 +32,9 @@ class Config:
     inbound_remark: str
     inbound_id: int | None
     traffic_gb: int
+    low_traffic_gb: float
+    extra_traffic_gb: int
+    traffic_check_minutes: int
     cdn_domain: str
     vless_template: str
     sub_url: str
@@ -53,6 +56,9 @@ class Config:
             inbound_remark=os.environ.get("INBOUND_REMARK", "AltynCDN").strip(),
             inbound_id=int(inbound_id) if inbound_id else None,
             traffic_gb=int(os.environ.get("TRAFFIC_GB", "15")),
+            low_traffic_gb=float(os.environ.get("LOW_TRAFFIC_GB", "2")),
+            extra_traffic_gb=int(os.environ.get("EXTRA_TRAFFIC_GB", "5")),
+            traffic_check_minutes=max(1, int(os.environ.get("TRAFFIC_CHECK_MINUTES", "30"))),
             cdn_domain=os.environ.get("CDN_DOMAIN", "").strip(),
             vless_template=os.environ.get("VLESS_TEMPLATE", "").strip(),
             sub_url=os.environ.get("SUB_URL", "").strip(),

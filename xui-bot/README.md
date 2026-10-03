@@ -11,10 +11,14 @@ no device limit) and sends the coworker a subscription link and a VLESS link, wi
 2. Shares their phone number with the "📱 ارسال شماره تماس" button (only their own contact is accepted).
 3. Waits for approval, then receives their links.
 4. Menu: 📊 remaining traffic · 🔗 my links · 📖 connection guide.
+5. When their remaining traffic drops to `LOW_TRAFFIC_GB` (default 2 GB) the bot warns them once,
+   with a "➕ درخواست حجم بیشتر" button. The same button is under the 📊 remaining traffic message.
 
 **Admin**
 - Each new request arrives with ✅ تایید / ❌ رد buttons.
-- 📋 pending requests · 👥 users (per user: resend links, reset traffic, disable/enable, delete)
+- Each "more traffic" request arrives with ✅ تایید (+5 گیگ) / ❌ رد buttons. Approving adds
+  `EXTRA_TRAFFIC_GB` (default 5 GB) to the user's quota in the panel and re-enables them if they had run out.
+- 📋 pending requests (new users and "more traffic" requests) · 👥 users (per user: resend links, reset traffic, disable/enable, delete)
 - 🔄 **تمدید ماهانه همه**: resets traffic for every active user and tells each of them. Press it when you renew the server.
 - ℹ️ status: panel connection, inbound ID, subscription URL and user counts.
 
@@ -24,7 +28,7 @@ The comment field holds `name | phone`, and `tgId` is set to the coworker's Tele
 ## Install (Ubuntu 22.04, as root, on the same server as the panel)
 
 ```bash
-git clone -b claude/loving-dijkstra-ez1ofk https://github.com/italtyn0/helloworld.git
+git clone -b claude/cloud-setup-billing-mqc25r https://github.com/italtyn0/helloworld.git
 cd helloworld/xui-bot
 sudo bash install.sh
 ```
@@ -51,4 +55,5 @@ systemctl restart altyn-bot         # after editing /opt/altyn-bot/.env
 Useful `.env` settings:
 - `SUB_URL`: set it if the subscription link in the status message is wrong (e.g. `https://sub.example.com:2096/sub/`).
 - `TRAFFIC_GB`: the quota for new users.
+- `LOW_TRAFFIC_GB`, `TRAFFIC_CHECK_MINUTES`, `EXTRA_TRAFFIC_GB`: the low-traffic alert and how much an approved request adds.
 - `INBOUND_ID`: skips looking up the inbound by its `INBOUND_REMARK`.
