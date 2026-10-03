@@ -1,0 +1,21 @@
+[Unit]
+Description=Altyn VPN Telegram bot (3X-UI)
+After=network-online.target x-ui.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=altynbot
+Group=altynbot
+WorkingDirectory=/opt/altyn-bot
+ExecStart=/opt/altyn-bot/venv/bin/python -m bot
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/altyn-bot/data
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
