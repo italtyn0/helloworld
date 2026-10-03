@@ -46,7 +46,11 @@ except Exception:  # tzdata missing
     TZ = timezone.utc
 
 USER_KB = ReplyKeyboardMarkup([[T.BTN_USAGE, T.BTN_LINKS], [T.BTN_GUIDE]], resize_keyboard=True)
-ADMIN_KB = ReplyKeyboardMarkup([[T.BTN_PENDING, T.BTN_USERS], [T.BTN_RENEW_ALL, T.BTN_STATUS]], resize_keyboard=True)
+ADMIN_KB = ReplyKeyboardMarkup(
+    [[T.BTN_PENDING, T.BTN_USERS], [T.BTN_ADD_USER, T.BTN_RENEW_ALL], [T.BTN_STATUS]], resize_keyboard=True
+)
+ADMIN_BUTTONS = {T.BTN_PENDING, T.BTN_USERS, T.BTN_ADD_USER, T.BTN_RENEW_ALL, T.BTN_STATUS}
+CANCEL_KB = InlineKeyboardMarkup([[InlineKeyboardButton(T.BTN_CANCEL, callback_data="x")]])
 MORE_KB = InlineKeyboardMarkup([[InlineKeyboardButton(T.BTN_MORE_TRAFFIC, callback_data="more")]])
 PHONE_KB = ReplyKeyboardMarkup(
     [[KeyboardButton(T.BTN_SHARE_PHONE, request_contact=True)]], resize_keyboard=True, one_time_keyboard=True
@@ -255,6 +259,8 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 async def on_contact(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     user = update.effective_user
     if is_admin(ctx, user.id):
+        if "adding" in ctx.user_data:  # admin sent a contact card while adding a user
+            await admin_add_input(update, ctx, update.message.contact.phone_number)
         return
     row = db(ctx).get(user.id)
     if not row or row["status"] != "awaiting_phone":
@@ -378,7 +384,15 @@ async def submit_more(ctx, row) -> bool:
 
 # ---------------------------------------------------------------- admin
 async def admin_text(update: Update, ctx, text: str) -> None:
-    if text == T.BTN_PENDING:
+    if text in ADMIN_BUTTONS:  # any menu button ends an unfinished "add user"
+        ctx.user_data.pop("adding", None)
+    elif "adding" in ctx.user_data:
+        await admin_add_input(update, ctx, text)
+        return
+    if text == T.BTN_ADD_USER:
+        ctx.user_data["adding"] = {}
+        await update.message.reply_text(T.ADD_ASK_NAME, reply_markup=CANCEL_KB)
+    elif text == T.BTN_PENDING:
         rows = db(ctx).by_status("pending")
         extra = db(ctx).extra_requests()
         if not rows and not extra:
@@ -405,6 +419,60 @@ async def admin_text(update: Update, ctx, text: str) -> None:
         await update.message.reply_text(await status_text(ctx), reply_markup=ADMIN_KB)
     else:
         await update.message.reply_text(T.ADMIN_MENU, reply_markup=ADMIN_KB)
+
+
+async def admin_add_input(update: Update, ctx, text: str) -> None:
+    state = ctx.user_data["adding"]
+    if "name" not in state:
+        name = clean_name(text)
+        if not name:
+            await update.message.reply_text(T.INVALID_NAME, reply_markup=CANCEL_KB)
+            return
+        state["name"] = name
+        await update.message.reply_text(T.ADD_ASK_PHONE.format(name=esc(name)), reply_markup=CANCEL_KB)
+        return
+    phone = normalize_phone(text)
+    if not phone:
+        await update.message.reply_text(T.ADD_INVALID_PHONE, reply_markup=CANCEL_KB)
+        return
+    ctx.user_data.pop("adding", None)
+    existing = db(ctx).active_by_phone(phone)
+    if existing:
+        await update.message.reply_text(T.ADD_PHONE_EXISTS.format(name=esc(existing["name"])), reply_markup=ADMIN_KB)
+        return
+    await create_manual_user(update, ctx, state["name"], phone)
+
+
+async def create_manual_user(update: Update, ctx, name: str, phone: str) -> None:
+    """Create the panel client right away. The user is stored like a web user (negative placeholder ID)
+    until they start the bot and share the same number."""
+    c = cfg(ctx)
+    token = secrets.token_urlsafe(18)
+    placeholder = db(ctx).add_web_request(name, phone, token, status="adding")
+    try:
+        ib = await inbound_id(ctx)
+        db(ctx).update(placeholder, email=await unique_email(ctx, name, placeholder),
+                       uuid=str(uuid.uuid4()), sub_id=random_sub_id())
+        row = db(ctx).get(placeholder)
+        await panel(ctx).add_client(
+            email=row["email"], uuid=row["uuid"], sub_id=row["sub_id"], total_bytes=c.traffic_gb * GB,
+            tg_id=0, comment=f"{name} | {phone}", inbound_id=ib,
+        )
+    except PanelError as exc:
+        log.exception("manual add failed for %s", phone)
+        db(ctx).delete(placeholder)
+        await update.message.reply_text(T.ADD_FAILED.format(error=esc(exc)), reply_markup=ADMIN_KB)
+        return
+    db(ctx).update(placeholder, status="approved", approved_at=int(time.time()))
+    web = T.ADD_WEB_PAGE.format(url=esc(f"{c.web_public_url}/s/{token}")) if c.web_port and c.web_public_url else ""
+    await update.message.reply_text(
+        T.ADD_DONE.format(name=esc(name), phone=esc(phone), email=esc(row["email"]), gb=T.fa(c.traffic_gb), web=web),
+        reply_markup=ADMIN_KB,
+    )
+    try:
+        await send_links(ctx, row, T.LINKS_HEADER, chat_id=update.effective_chat.id)
+    except Exception as exc:
+        log.warning("could not send links for %s to admin: %s", row["email"], exc)
 
 
 async def status_text(ctx) -> str:
@@ -589,6 +657,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         return
     action, _, arg = q.data.partition(":")
     if action == "x":
+        ctx.user_data.pop("adding", None)
         await q.answer()
         await q.edit_message_text(T.CANCELLED)
         return

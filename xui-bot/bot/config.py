@@ -47,6 +47,7 @@ class Config:
     web_port: int | None
     web_host: str
     web_cert_file: str
+    web_public_url: str
     web_key_file: str
     cdn_domain: str
     vless_template: str
@@ -76,6 +77,7 @@ class Config:
             web_port=int(web_port) if web_port else None,
             web_host=os.environ.get("WEB_HOST", "0.0.0.0").strip(),
             web_cert_file=_tls_file("web_cert", "WEB_CERT_FILE"),
+            web_public_url=os.environ.get("WEB_PUBLIC_URL", "").strip().rstrip("/"),
             web_key_file=_tls_file("web_key", "WEB_KEY_FILE"),
             cdn_domain=os.environ.get("CDN_DOMAIN", "").strip(),
             vless_template=os.environ.get("VLESS_TEMPLATE", "").strip(),

@@ -59,27 +59,31 @@ class DB:
         self.conn.commit()
 
     # ---- web requests
-    def add_web_request(self, name: str, phone: str, token: str) -> int:
-        """Store a web form request under a fresh negative placeholder ID and return that ID."""
+    def add_web_request(self, name: str, phone: str, token: str, status: str = "pending") -> int:
+        """Store a user without Telegram (web form, or added by the admin) under a fresh negative
+        placeholder ID and return that ID."""
         with self.conn:
             # A rejected earlier web request with this number makes way for the new one.
             self.conn.execute("DELETE FROM users WHERE phone = ? AND tg_id < 0 AND status = 'rejected'", (phone,))
             placeholder = min(self.conn.execute("SELECT MIN(tg_id) FROM users").fetchone()[0] or 0, 0) - 1
             self.conn.execute(
                 """INSERT INTO users (tg_id, name, phone, status, web_token, created_at)
-                   VALUES (?, ?, ?, 'pending', ?, ?)""",
-                (placeholder, name, phone, token, int(time.time())),
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                (placeholder, name, phone, status, token, int(time.time())),
             )
         return placeholder
 
     def by_token(self, token: str):
         return self.conn.execute("SELECT * FROM users WHERE web_token = ?", (token,)).fetchone()
 
-    def phone_in_use(self, phone: str) -> bool:
-        row = self.conn.execute(
-            "SELECT 1 FROM users WHERE phone = ? AND status IN ('pending', 'approved', 'disabled')", (phone,)
+    def active_by_phone(self, phone: str):
+        """The account (or waiting request) that already uses this number, if any."""
+        return self.conn.execute(
+            "SELECT * FROM users WHERE phone = ? AND status IN ('pending', 'approved', 'disabled')", (phone,)
         ).fetchone()
-        return row is not None
+
+    def phone_in_use(self, phone: str) -> bool:
+        return self.active_by_phone(phone) is not None
 
     def web_by_phone(self, phone: str):
         """A web request with this number that is not yet tied to a Telegram account."""

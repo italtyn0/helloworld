@@ -30,6 +30,10 @@ requests while 50 web requests are waiting.
 - Each new request arrives with ✅ تایید / ❌ رد buttons.
 - Each "more traffic" request arrives with ✅ تایید (+5 گیگ) / ❌ رد buttons. Approving adds
   `EXTRA_TRAFFIC_GB` (default 5 GB) to the user's quota in the panel and re-enables them if they had run out.
+- ➕ **افزودن کاربر**: type a name, then a phone number (`0912…`, `+98…`, or send their contact card).
+  The client is created in the panel at once (TRAFFIC_GB) and the bot sends you the links and QR codes to pass on.
+  When that person starts the bot and shares the same number, the account moves to their Telegram.
+  If `WEB_PUBLIC_URL` is set, you also get a link to their private web page.
 - 📋 pending requests (new users and "more traffic" requests) · 👥 users (per user: resend links, reset traffic, disable/enable, delete)
 - 🔄 **تمدید ماهانه همه**: resets traffic for every active user and tells each of them. Press it when you renew the server.
 - ℹ️ status: panel connection, inbound ID, subscription URL and user counts.
@@ -68,6 +72,7 @@ Useful `.env` settings:
 - `SUB_URL`: set it if the subscription link in the status message is wrong (e.g. `https://sub.example.com:2096/sub/`).
 - `TRAFFIC_GB`: the quota for new users.
 - `WEB_PORT`: the port of the web form (empty turns it off).
+- `WEB_PUBLIC_URL`: public address of the web form (e.g. `https://95.182.91.213:8080`), used for the page links of users you add.
 - `WEB_CERT_FILE` / `WEB_KEY_FILE`: serve the web form over https. `install.sh` fills them in from
   `/root/cert/<panel domain>/` when they are empty, and sets up a watcher that restarts the bot when the certificate is renewed.
 - `LOW_TRAFFIC_GB`, `TRAFFIC_CHECK_MINUTES`, `EXTRA_TRAFFIC_GB`: the low-traffic alert and how much an approved request adds.
