@@ -67,21 +67,24 @@ USAGE = (
 STATUS_ON = "🟢 فعال"
 STATUS_OFF = "🔴 غیرفعال (حجم تمام شده یا مسدود)"
 
-GUIDE = (
-    "📖 <b>راهنمای اتصال</b>\n\n"
-    "<b>۱. نصب برنامه</b>\n"
-    "• اندروید: <a href=\"https://github.com/2dust/v2rayNG/releases\">v2rayNG</a> یا "
-    "<a href=\"https://github.com/hiddify/hiddify-app/releases\">Hiddify</a>\n"
-    "• آیفون / مک: V2Box یا Streisand (از App Store)\n"
-    "• ویندوز: <a href=\"https://github.com/2dust/v2rayN/releases\">v2rayN</a> یا "
-    "<a href=\"https://github.com/hiddify/hiddify-app/releases\">Hiddify</a>\n\n"
+V2BOX_IOS = "https://apps.apple.com/app/v2box-v2ray-client/id6446814690"
+V2BOX_ANDROID = "https://play.google.com/store/apps/details?id=dev.hexasoftware.v2box"
+GUIDE_STEPS = (
+    "<b>۱. نصب V2Box (آخرین نسخه)</b>\n"
+    f"• آیفون / آیپد / مک: <a href=\"{V2BOX_IOS}\">V2Box در App Store</a>\n"
+    f"• اندروید: <a href=\"{V2BOX_ANDROID}\">V2Box در Google Play</a>\n"
+    "⚠️ اگر V2Box را از قبل دارید، حتماً آن را از App Store یا Google Play به آخرین نسخه به‌روزرسانی کنید.\n"
+    "فقط از برنامه‌ی V2Box استفاده کنید.\n\n"
     "<b>۲. افزودن اشتراک</b>\n"
-    "لینک اشتراک را از دکمه‌ی «🔗 لینک‌های من» کپی کنید. سپس در برنامه گزینه‌ی "
-    "<i>Import from clipboard</i> یا <i>Add subscription</i> را بزنید (یا QR را اسکن کنید).\n\n"
+    "لینک اشتراک را کپی کنید. در V2Box به بخش <i>Configs</i> بروید، دکمه‌ی <b>+</b> را بزنید و "
+    "<i>Add subscription</i> را انتخاب کنید، لینک را جای‌گذاری و ذخیره کنید "
+    "(یا با <i>Scan QR code</i>، QR لینک اشتراک را اسکن کنید).\n\n"
     "<b>۳. اتصال</b>\n"
-    "اشتراک را به‌روزرسانی (Update) کنید، کانفیگ AltynCDN را انتخاب و دکمه‌ی اتصال را بزنید.\n\n"
-    "💡 اگر لینک اشتراک کار نکرد، لینک کانفیگ VLESS را به همان روش اضافه کنید."
+    "اشتراک را به‌روزرسانی (Update) کنید، کانفیگ را انتخاب کنید و در صفحه‌ی <i>Home</i> دکمه‌ی اتصال را بزنید.\n\n"
+    "💡 اگر لینک اشتراک کار نکرد، لینک کانفیگ VLESS را کپی کنید و در همان منوی <b>+</b> گزینه‌ی "
+    "<i>Import v2ray uri from clipboard</i> را بزنید."
 )
+GUIDE = "📖 <b>راهنمای اتصال</b>\n\n" + GUIDE_STEPS
 RENEWED = "🔄 حجم ماهانه‌ی شما تمدید شد!\n📦 {gb} گیگابایت جدید در اختیار شماست. 🌱"
 
 # ---------- admin side ----------

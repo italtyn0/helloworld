@@ -231,14 +231,7 @@ class WebApp:
         raise web.HTTPSeeOther(f"/s/{token}?more=sent")
 
 
-WEB_GUIDE = (
-    "📖 <b>راهنمای اتصال</b>\n"
-    "<b>۱.</b> برنامه نصب کنید: اندروید v2rayNG یا Hiddify، آیفون V2Box یا Streisand، ویندوز v2rayN یا Hiddify.\n"
-    "<b>۲.</b> لینک اشتراک بالا را کپی کنید و در برنامه گزینه‌ی Import from clipboard یا Add subscription را بزنید "
-    "(یا QR را اسکن کنید).\n"
-    "<b>۳.</b> اشتراک را Update کنید، کانفیگ را انتخاب و وصل شوید.\n"
-    "💡 اگر لینک اشتراک کار نکرد، لینک کانفیگ VLESS را به همان روش اضافه کنید."
-)
+WEB_GUIDE = "📖 <b>راهنمای اتصال</b>\n\n" + T.GUIDE_STEPS
 
 
 async def start_web(ctx, host: str, port: int, cert_file: str = "", key_file: str = "") -> web.AppRunner:
