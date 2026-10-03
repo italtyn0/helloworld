@@ -29,14 +29,15 @@ echo "==> Installing Python packages"
 
 if [ ! -f "$APP_DIR/.env" ]; then
   echo "==> Creating $APP_DIR/.env"
-  cp "$SRC_DIR/.env.example" "$APP_DIR/.env"
+  # Filled in a temp file so an aborted run never leaves a half-empty .env behind.
+  cp "$SRC_DIR/.env.example" "$APP_DIR/.env.tmp"
   read -rp  "Telegram bot token (from @BotFather): " BOT_TOKEN
   read -rp  "Admin Telegram user ID(s), comma-separated: " ADMIN_IDS
   read -rp  "Panel URL incl. base path (e.g. https://panel.example.com:2053/AbC123): " PANEL_URL
   read -rsp "3X-UI API token (Settings -> Security -> API Token): " PANEL_TOKEN; echo
   read -rp  "Paste one working vless:// link from the inbound: " SAMPLE_LINK
   export BOT_TOKEN ADMIN_IDS PANEL_URL PANEL_TOKEN SAMPLE_LINK
-  python3 - "$APP_DIR/.env" <<'PY'
+  python3 - "$APP_DIR/.env.tmp" <<'PY'
 import os, re, sys
 from urllib.parse import urlsplit
 
@@ -56,8 +57,9 @@ for i, line in enumerate(lines):
         lines[i] = f"{key}={env[key]}"
 open(path, "w", encoding="utf-8").write("\n".join(lines) + "\n")
 PY
+  mv "$APP_DIR/.env.tmp" "$APP_DIR/.env"
 else
-  echo "==> Keeping existing $APP_DIR/.env"
+  echo "==> Keeping existing $APP_DIR/.env (delete it and re-run to enter the settings again)"
 fi
 
 chown -R altynbot:altynbot "$APP_DIR"
