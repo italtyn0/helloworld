@@ -22,6 +22,15 @@ def _bool(value: str) -> bool:
     return value.strip().lower() in ("1", "true", "yes", "on")
 
 
+def _tls_file(credential: str, env_key: str) -> str:
+    """Certificate path for the web form. Under systemd, install.sh passes the files in as credentials
+    because the service user cannot read /root/cert; otherwise the path from .env is used as is."""
+    cred_dir = os.environ.get("CREDENTIALS_DIRECTORY")
+    if cred_dir and (Path(cred_dir) / credential).exists():
+        return str(Path(cred_dir) / credential)
+    return os.environ.get(env_key, "").strip()
+
+
 @dataclass(frozen=True)
 class Config:
     bot_token: str
@@ -37,6 +46,8 @@ class Config:
     traffic_check_minutes: int
     web_port: int | None
     web_host: str
+    web_cert_file: str
+    web_key_file: str
     cdn_domain: str
     vless_template: str
     sub_url: str
@@ -64,6 +75,8 @@ class Config:
             traffic_check_minutes=max(1, int(os.environ.get("TRAFFIC_CHECK_MINUTES", "30"))),
             web_port=int(web_port) if web_port else None,
             web_host=os.environ.get("WEB_HOST", "0.0.0.0").strip(),
+            web_cert_file=_tls_file("web_cert", "WEB_CERT_FILE"),
+            web_key_file=_tls_file("web_key", "WEB_KEY_FILE"),
             cdn_domain=os.environ.get("CDN_DOMAIN", "").strip(),
             vless_template=os.environ.get("VLESS_TEMPLATE", "").strip(),
             sub_url=os.environ.get("SUB_URL", "").strip(),

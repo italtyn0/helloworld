@@ -15,7 +15,7 @@ no device limit) and sends the coworker a subscription link and a VLESS link, wi
    with a "➕ درخواست حجم بیشتر" button. The same button is under the 📊 remaining traffic message.
 
 **People without Telegram (web form)**
-1. Open `http://SERVER:WEB_PORT/` and send their name and phone number.
+1. Open `https://PANEL-DOMAIN:WEB_PORT/` (`http://` if no certificate is set) and send their name and phone number.
 2. They land on a private status page (`/s/<secret>`). They should bookmark it, because it is their only way back in.
 3. The admin gets the usual ✅ تایید / ❌ رد card in Telegram, marked 🌐.
 4. After approval the status page shows their usage, subscription and VLESS links with QR codes, a low-traffic
@@ -67,6 +67,8 @@ systemctl restart altyn-bot         # after editing /opt/altyn-bot/.env
 Useful `.env` settings:
 - `SUB_URL`: set it if the subscription link in the status message is wrong (e.g. `https://sub.example.com:2096/sub/`).
 - `TRAFFIC_GB`: the quota for new users.
-- `WEB_PORT`: the port of the web form (empty turns it off). Open it in the firewall: `ufw allow 8080/tcp`.
+- `WEB_PORT`: the port of the web form (empty turns it off).
+- `WEB_CERT_FILE` / `WEB_KEY_FILE`: serve the web form over https. `install.sh` fills them in from
+  `/root/cert/<panel domain>/` when they are empty, and sets up a watcher that restarts the bot when the certificate is renewed.
 - `LOW_TRAFFIC_GB`, `TRAFFIC_CHECK_MINUTES`, `EXTRA_TRAFFIC_GB`: the low-traffic alert and how much an approved request adds.
 - `INBOUND_ID`: skips looking up the inbound by its `INBOUND_REMARK`.

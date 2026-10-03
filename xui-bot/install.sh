@@ -65,9 +65,57 @@ fi
 chown -R altynbot:altynbot "$APP_DIR"
 chmod 600 "$APP_DIR/.env"
 
+env_get() { sed -n "s/^$1=//p" "$APP_DIR/.env" | tail -n1 | tr -d '"'"'"' '; }
+
+# HTTPS for the web form: reuse the panel's certificate when .env does not name one yet.
+if [ -n "$(env_get WEB_PORT)" ] && [ -z "$(env_get WEB_CERT_FILE)" ]; then
+  PANEL_HOST=$(python3 -c 'import sys; from urllib.parse import urlsplit; print(urlsplit(sys.argv[1]).hostname or "")' "$(env_get PANEL_URL)")
+  if [ -n "$PANEL_HOST" ] && [ -f "/root/cert/$PANEL_HOST/fullchain.pem" ] && [ -f "/root/cert/$PANEL_HOST/privkey.pem" ]; then
+    echo "==> Using the certificate in /root/cert/$PANEL_HOST for the web form (https)"
+    sed -i '/^WEB_CERT_FILE=/d; /^WEB_KEY_FILE=/d' "$APP_DIR/.env"
+    printf 'WEB_CERT_FILE=%s\nWEB_KEY_FILE=%s\n' "/root/cert/$PANEL_HOST/fullchain.pem" "/root/cert/$PANEL_HOST/privkey.pem" >> "$APP_DIR/.env"
+  fi
+fi
+
 echo "==> Installing systemd service"
 cp "$SRC_DIR/altyn-bot.service" "/etc/systemd/system/$SERVICE.service"
+WEB_CERT_FILE=$(env_get WEB_CERT_FILE)
+WEB_KEY_FILE=$(env_get WEB_KEY_FILE)
+rm -f "/etc/systemd/system/$SERVICE.service.d/tls.conf"
+systemctl disable --now "$SERVICE-cert.path" >/dev/null 2>&1 || true
+rm -f "/etc/systemd/system/$SERVICE-cert.path" "/etc/systemd/system/$SERVICE-cert.service"
+if [ -n "$WEB_CERT_FILE" ] && [ -n "$WEB_KEY_FILE" ]; then
+  # The bot user cannot read /root; systemd reads the files as root and hands the bot a copy.
+  mkdir -p "/etc/systemd/system/$SERVICE.service.d"
+  cat > "/etc/systemd/system/$SERVICE.service.d/tls.conf" <<EOF
+[Service]
+LoadCredential=web_cert:$WEB_CERT_FILE
+LoadCredential=web_key:$WEB_KEY_FILE
+EOF
+  # Restart the bot when the certificate is renewed so it picks up the new one.
+  cat > "/etc/systemd/system/$SERVICE-cert.service" <<EOF
+[Unit]
+Description=Restart $SERVICE after its certificate changed
+
+[Service]
+Type=oneshot
+ExecStart=/bin/systemctl restart $SERVICE.service
+EOF
+  cat > "/etc/systemd/system/$SERVICE-cert.path" <<EOF
+[Unit]
+Description=Watch the web form certificate of $SERVICE
+
+[Path]
+PathChanged=$WEB_CERT_FILE
+
+[Install]
+WantedBy=multi-user.target
+EOF
+fi
 systemctl daemon-reload
+if [ -f "/etc/systemd/system/$SERVICE-cert.path" ]; then
+  systemctl enable --now "$SERVICE-cert.path" >/dev/null
+fi
 systemctl enable "$SERVICE" >/dev/null
 systemctl restart "$SERVICE"
 sleep 3

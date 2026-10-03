@@ -9,6 +9,7 @@ import base64
 import html
 import logging
 import secrets
+import ssl
 import time
 from collections import defaultdict, deque
 
@@ -240,7 +241,7 @@ WEB_GUIDE = (
 )
 
 
-async def start_web(ctx, host: str, port: int) -> web.AppRunner:
+async def start_web(ctx, host: str, port: int, cert_file: str = "", key_file: str = "") -> web.AppRunner:
     app_ = WebApp(ctx)
     app = web.Application(client_max_size=16 * 1024)
     app.add_routes([
@@ -251,6 +252,10 @@ async def start_web(ctx, host: str, port: int) -> web.AppRunner:
     ])
     runner = web.AppRunner(app, access_log=None)  # no access log: status URLs contain the secret token
     await runner.setup()
-    await web.TCPSite(runner, host, port).start()
-    log.info("web form listening on http://%s:%s/", host, port)
+    ssl_ctx = None
+    if cert_file and key_file:
+        ssl_ctx = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+        ssl_ctx.load_cert_chain(cert_file, key_file)
+    await web.TCPSite(runner, host, port, ssl_context=ssl_ctx).start()
+    log.info("web form listening on %s://%s:%s/", "https" if ssl_ctx else "http", host, port)
     return runner

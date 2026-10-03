@@ -723,7 +723,10 @@ async def post_init(app: Application) -> None:
     if c.web_port:
         from .web import start_web
 
-        app.bot_data["web_runner"] = await start_web(_Ctx, c.web_host, c.web_port)
+        try:
+            app.bot_data["web_runner"] = await start_web(_Ctx, c.web_host, c.web_port, c.web_cert_file, c.web_key_file)
+        except Exception:  # bad certificate path, port in use… keep the Telegram bot running
+            log.exception("web form failed to start")
 
 
 async def post_shutdown(app: Application) -> None:
