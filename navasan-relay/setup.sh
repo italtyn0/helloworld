@@ -4,7 +4,7 @@ set -e
 cd "$(dirname "$0")"
 
 # Remember the chosen port in .env so later `docker compose` runs reuse it.
-saved=$(sed -n 's/^RELAY_PORT=//p' .env 2>/dev/null)
+saved=$(sed -n 's/^RELAY_PORT=//p' .env 2>/dev/null || true)
 port="${RELAY_PORT:-${saved:-8080}}"
 if command -v ss >/dev/null && ss -ltn | awk '{print $4}' | grep -qE "[:.]$port\$"; then
     if ! docker compose ps --status running 2>/dev/null | grep -q relay; then
