@@ -9,7 +9,8 @@ passes it back, including the live price updates and charts.
 - A VPS that **can** open navasan.net itself. Test from the VPS with
   `curl -sI https://www.navasan.net/`; you want `HTTP/2 200`.
 - Docker with the compose plugin on the VPS.
-- Port 80 open in the VPS firewall.
+- A free port, 8080 by default (`RELAY_PORT=8181 ./setup.sh` to change it),
+  open in the VPS firewall.
 
 ## Setup
 
@@ -19,7 +20,11 @@ git clone <this repo> && cd helloworld/navasan-relay
 ```
 
 It asks for a username and password (so strangers can't use your relay),
-then starts nginx. Open `http://<your-vps-ip>/` and log in.
+then starts nginx. Open `http://<your-vps-ip>:8080/` and log in.
+
+The relay runs in its own Docker container on its own port, so it sits next
+to other services such as an x-ui panel without touching them. It stays off
+port 80 because x-ui's certificate renewal (acme.sh) needs that port.
 
 Stop it with `docker compose down`, and change the login by deleting
 `htpasswd` and running `./setup.sh` again.
@@ -29,8 +34,7 @@ Stop it with `docker compose down`, and change the login by deleting
 Install nginx (`apt install nginx`), then:
 
 ```sh
-sudo cp navasan.conf /etc/nginx/sites-enabled/navasan.conf
-sudo rm -f /etc/nginx/sites-enabled/default
+sed 's/listen 80;/listen 8080;/' navasan.conf | sudo tee /etc/nginx/sites-enabled/navasan.conf
 printf 'me:%s\n' "$(openssl passwd -apr1 'your-password')" | sudo tee /etc/nginx/htpasswd
 sudo nginx -t && sudo systemctl reload nginx
 ```
