@@ -3,7 +3,9 @@
 set -e
 cd "$(dirname "$0")"
 
-port="${RELAY_PORT:-8080}"
+# Remember the chosen port in .env so later `docker compose` runs reuse it.
+saved=$(sed -n 's/^RELAY_PORT=//p' .env 2>/dev/null)
+port="${RELAY_PORT:-${saved:-8080}}"
 if command -v ss >/dev/null && ss -ltn | awk '{print $4}' | grep -qE "[:.]$port\$"; then
     if ! docker compose ps --status running 2>/dev/null | grep -q relay; then
         echo "Port $port is already used by something else (maybe x-ui)."
@@ -21,6 +23,7 @@ if [ ! -f htpasswd ]; then
     echo "Saved login to htpasswd"
 fi
 
-RELAY_PORT="$port" docker compose up -d
+echo "RELAY_PORT=$port" > .env
+docker compose up -d
 echo "Relay is running. Open http://<your-vps-ip>:$port/ in your browser."
-echo "If it doesn't load, open port $port in your VPS firewall (e.g. ufw allow $port/tcp)."
+echo "If it doesn't load, open port $port in your VPS firewall and in your VPS provider's panel."

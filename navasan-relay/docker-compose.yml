@@ -2,9 +2,13 @@ services:
   relay:
     image: nginx:alpine
     restart: unless-stopped
-    ports:
-      # Not port 80, so it doesn't clash with x-ui / certificate renewal.
-      - "${RELAY_PORT:-8080}:80"
+    # Use the server's own network directly. Docker's internal network is
+    # often unreachable on VPN servers (x-ui, WARP, custom routing).
+    network_mode: host
     volumes:
-      - ./navasan.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./navasan.conf:/etc/nginx/navasan.conf.in:ro
       - ./htpasswd:/etc/nginx/htpasswd:ro
+    # Listen on RELAY_PORT (not 80, which x-ui's certificate renewal needs).
+    command: >-
+      sh -c "sed 's/listen 80;/listen ${RELAY_PORT:-8080};/' /etc/nginx/navasan.conf.in
+      > /etc/nginx/conf.d/default.conf && exec nginx -g 'daemon off;'"
