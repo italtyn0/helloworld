@@ -8,6 +8,13 @@ services:
     volumes:
       - ./navasan.conf:/etc/nginx/navasan.conf.in:ro
       - ./htpasswd:/etc/nginx/htpasswd:ro
+    # Keep it small on a tiny VPS: cap memory and stop logs growing forever.
+    mem_limit: 64m
+    logging:
+      driver: json-file
+      options:
+        max-size: "1m"
+        max-file: "2"
     # Listen on RELAY_PORT (not 80, which x-ui's certificate renewal needs).
     command: >-
       sh -c "sed 's/listen 80;/listen ${RELAY_PORT:-8080};/' /etc/nginx/navasan.conf.in
